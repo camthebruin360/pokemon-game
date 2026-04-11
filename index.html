@@ -248,7 +248,9 @@ function buildTrackMesh() {
     const t       = i / N;
     const pos     = trackCurve.getPointAt(t);
     const tangent = trackCurve.getTangentAt(t).normalize();
-    const right   = tmp.clone().crossVectors(tangent, up).normalize();
+    const flatVec = new THREE.Vector3(tangent.x, 0, tangent.z);
+    const flatTangent = flatVec.length() > 0.0001 ? flatVec.normalize() : new THREE.Vector3(1, 0, 0);
+    const right   = new THREE.Vector3().crossVectors(flatTangent, up).normalize();
 
     // Outer grass (left)
     const gl = pos.clone().addScaledVector(right, -(ROAD_WIDTH / 2 + CURB_WIDTH + 6));
@@ -297,7 +299,7 @@ function buildTrackMesh() {
   geo.setIndex(idx);
   geo.computeVertexNormals();
 
-  const mat  = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mat  = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.name = 'track';
@@ -352,7 +354,7 @@ const groundMesh = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x3d6e3a })
 );
 groundMesh.rotation.x = -Math.PI / 2;
-groundMesh.position.y = -0.5;
+groundMesh.position.y = -2;
 groundMesh.receiveShadow = true;
 scene.add(groundMesh);
 
@@ -421,10 +423,10 @@ function addSign(x, y, z, label) {
 // ---------------------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
 raycaster.near = 0;
-raycaster.far  = 100;
+raycaster.far  = 300;
 
 function getGroundInfo(x, z) {
-  raycaster.set(new THREE.Vector3(x, 50, z), new THREE.Vector3(0, -1, 0));
+  raycaster.set(new THREE.Vector3(x, 200, z), new THREE.Vector3(0, -1, 0));
   const hits = raycaster.intersectObject(trackMesh);
   if (hits.length > 0) {
     return { y: hits[0].point.y, normal: hits[0].face.normal.clone(), onRoad: true };
@@ -759,6 +761,7 @@ function useItem(racer, isPlayer) {
 
   if (item === 'boost') {
     racer.boostFrames = BOOST_DURATION;
+    racer.speed = BOOST_SPEED * 0.85; // immediate kick (85% of cap so accel still feels impactful)
     if (isPlayer) {
       // Visual flash
       const flash = document.getElementById('boost-flash');
@@ -1227,9 +1230,11 @@ renderer.setAnimationLoop(() => {
     updatePlayer();
   }
 
-  aiKarts.forEach(ai => {
-    if (!ai.finished) updateAI(ai);
-  });
+  if (raceState === 'racing') {
+    aiKarts.forEach(ai => {
+      if (!ai.finished) updateAI(ai);
+    });
+  }
 
   updateItemBoxes();
   updateProjectiles();
