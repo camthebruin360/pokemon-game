@@ -431,7 +431,7 @@ function getGroundInfo(x, z) {
   if (hits.length > 0) {
     return { y: hits[0].point.y, normal: hits[0].face.normal.clone(), onRoad: true };
   }
-  return { y: groundMesh.position.y + 0.5, normal: new THREE.Vector3(0,1,0), onRoad: false };
+  return { y: groundMesh.position.y + 2.5, normal: new THREE.Vector3(0,1,0), onRoad: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -923,13 +923,7 @@ function updateAI(ai) {
 
   // Update mesh
   ai.mesh.position.copy(ai.pos);
-  ai.mesh.rotation.y = ai.angle;
-  if (ground.normal) {
-    const up = new THREE.Vector3(0, 1, 0);
-    const qNorm = new THREE.Quaternion().setFromUnitVectors(up, ground.normal);
-    const qYaw  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ai.angle);
-    ai.mesh.quaternion.copy(qNorm).premultiply(qYaw);
-  }
+  ai.mesh.rotation.set(0, ai.angle, 0);
 
   // AI item use (random)
   if (ai.heldItem && Math.random() < 0.003) {
@@ -1002,17 +996,7 @@ function updatePlayer() {
 
   // Update mesh
   player.mesh.position.copy(player.pos);
-
-  // Align to ground normal
-  const up = new THREE.Vector3(0, 1, 0);
-  if (ground.normal) {
-    const worldNorm = ground.normal.clone().transformDirection(trackMesh.matrixWorld).normalize();
-    const qNorm = new THREE.Quaternion().setFromUnitVectors(up, worldNorm);
-    const qYaw  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), player.angle);
-    player.mesh.quaternion.copy(qNorm).premultiply(qYaw);
-  } else {
-    player.mesh.rotation.y = player.angle;
-  }
+  player.mesh.rotation.set(0, player.angle, 0);
 }
 
 // Chase camera
