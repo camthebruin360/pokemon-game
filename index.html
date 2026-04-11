@@ -152,7 +152,7 @@ const ITEM_BOX_COUNT   = 10;
 
 // AI colours
 const AI_COLORS = [0xe74c3c, 0x2ecc71, 0x9b59b6];
-const AI_NAMES  = ['Rex', 'Zelda', 'Nova'];
+const AI_NAMES  = ['Rex', 'Luna', 'Nova'];
 
 // Physics constants
 const PLAYER_ACCEL      = 0.028;
@@ -329,11 +329,12 @@ function buildFinishLine() {
   mesh.position.copy(pos);
   scene.add(mesh);
 
-  // Checkered flag stripes
-  for (let i = -4; i <= 4; i += 2) {
+  // Checkered flag stripes (alternating black / white)
+  let stripeIdx = 0;
+  for (let i = -4; i <= 4; i += 2, stripeIdx++) {
     const stripe = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2.5),
-      new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0x000000 : 0xffffff })
+      new THREE.MeshBasicMaterial({ color: stripeIdx % 2 === 0 ? 0x000000 : 0xffffff })
     );
     stripe.position.copy(pos);
     stripe.position.add(right.clone().multiplyScalar(i));
@@ -797,9 +798,9 @@ function updateProjectiles() {
     }
 
     // Check vs AIs
-    aiKarts.forEach((ai, idx) => {
+    aiKarts.forEach((ai) => {
       if (hit) return;
-      if (p.ownerId === idx) return;
+      if (p.ownerId === ai) return;  // don't hit the kart that fired this
       if (p.mesh.position.distanceTo(ai.pos) < 3) {
         ai.explodeFrames = 90;
         ai.speed *= 0.2;
@@ -987,7 +988,7 @@ function updatePlayer() {
   player.pos.y = ground.y + 0.55;
   if (!ground.onRoad) player.speed *= GRASS_DRAG;
 
-  // Track T
+  // Track T – update if kart moved forward (delta > -0.3) or wrapped around (delta < -0.7)
   const closestT = findClosestT(player.pos, player.trackT);
   if (closestT !== null) {
     const delta = closestT - player.trackT;
