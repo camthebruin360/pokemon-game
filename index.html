@@ -1873,8 +1873,8 @@ function initMapControls() {
         // Sync slider UI
         ['dev-road-width','dev-curb-width','dev-height-scale'].forEach(sid=>{
           const se=document.getElementById(sid);
-          const key=sid.replace('dev-','').replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
-          if (se && devTrackSettings[key]!==undefined){ se.value=devTrackSettings[key]; document.getElementById(sid+'-val').textContent=devTrackSettings[key]; }
+          const settingKey=sid.replace('dev-','').replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
+          if (se && devTrackSettings[settingKey]!==undefined){ se.value=devTrackSettings[settingKey]; document.getElementById(sid+'-val').textContent=devTrackSettings[settingKey]; }
         });
         devSelectedPtIdx=null; devUpdatePtCoordsDisplay(); devDrawEditorMinimap(); rebuildTrack();
       } catch(err) { alert('Invalid track JSON: '+err.message); }
@@ -1945,8 +1945,8 @@ function initCarControls() {
       document.getElementById('dev-car-stripe-color').value=devCarSettings.stripeColor||'#ff0000';
       ['dev-car-body-width','dev-car-body-length','dev-car-body-height','dev-car-wheel-size','dev-car-wheel-width'].forEach(sid=>{
         const el=document.getElementById(sid), lbl=document.getElementById(sid+'-val');
-        const key=sid.replace('dev-car-','').replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
-        if (el && devCarSettings[key]!==undefined){ el.value=devCarSettings[key]; if(lbl) lbl.textContent=parseFloat(devCarSettings[key]).toFixed(sid.includes('body')?1:2); }
+        const settingKey=sid.replace('dev-car-','').replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
+        if (el && devCarSettings[settingKey]!==undefined){ el.value=devCarSettings[settingKey]; if(lbl) lbl.textContent=parseFloat(devCarSettings[settingKey]).toFixed(sid.includes('body')?1:2); }
       });
       document.getElementById('dev-car-cockpit-style').value=devCarSettings.cockpitStyle||'Normal';
       document.getElementById('dev-car-stripe-style').value=devCarSettings.stripeStyle||'None';
