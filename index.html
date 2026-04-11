@@ -146,7 +146,7 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 const TRACK_SEGMENTS   = 600;   // resolution of road mesh
 const ROAD_WIDTH       = 20;    // units
 const CURB_WIDTH       = 2;
-const TOTAL_LAPS       = 3;
+let TOTAL_LAPS         = 3;
 const AI_COUNT         = 3;
 const ITEM_BOX_COUNT   = 10;
 
@@ -155,14 +155,14 @@ const AI_COLORS = [0xe74c3c, 0x2ecc71, 0x9b59b6];
 const AI_NAMES  = ['Rex', 'Luna', 'Nova'];
 
 // Physics constants
-const PLAYER_ACCEL      = 0.028;
+let PLAYER_ACCEL        = 0.028;
 const PLAYER_BRAKE      = 0.038;
-const PLAYER_MAX_SPEED  = 0.55;
+let PLAYER_MAX_SPEED    = 0.55;
 const PLAYER_FRICTION   = 0.965;
 const GRASS_DRAG        = 0.88;
 const TURN_SPEED        = 0.048;
-const BOOST_SPEED       = 0.82;
-const BOOST_DURATION    = 180; // frames
+let BOOST_SPEED         = 0.82;
+let BOOST_DURATION      = 180; // frames
 
 // ---------------------------------------------------------------------------
 // TRACK CONTROL POINTS  (x, y, z)  – closed loop
@@ -223,7 +223,7 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 // TRACK SECTION
 // ---------------------------------------------------------------------------
-const trackCurve = new THREE.CatmullRomCurve3(CTRL_PTS, true, 'catmullrom', 0.5);
+let trackCurve = new THREE.CatmullRomCurve3(CTRL_PTS, true, 'catmullrom', 0.5);
 
 // Pre-compute sample positions along track for use by AI & items
 const TRACK_SAMPLES = 200;
@@ -306,7 +306,7 @@ function buildTrackMesh() {
   return mesh;
 }
 
-const trackMesh = buildTrackMesh();
+let trackMesh = buildTrackMesh();
 scene.add(trackMesh);
 
 // Start/finish line marker
@@ -1021,14 +1021,14 @@ const MM_SIZE        = 160;
 const MM_RADIUS      = MM_SIZE / 2 - 4;
 
 // Pre-compute minimap track points
-const mmTrackPts = trackCurve.getSpacedPoints(120);
+let mmTrackPts = trackCurve.getSpacedPoints(120);
 let mmMinX = Infinity, mmMaxX = -Infinity, mmMinZ = Infinity, mmMaxZ = -Infinity;
 mmTrackPts.forEach(p => {
   mmMinX = Math.min(mmMinX, p.x); mmMaxX = Math.max(mmMaxX, p.x);
   mmMinZ = Math.min(mmMinZ, p.z); mmMaxZ = Math.max(mmMaxZ, p.z);
 });
-const mmRangeX = mmMaxX - mmMinX || 1;
-const mmRangeZ = mmMaxZ - mmMinZ || 1;
+let mmRangeX = mmMaxX - mmMinX || 1;
+let mmRangeZ = mmMaxZ - mmMinZ || 1;
 
 function worldToMM(x, z) {
   return {
@@ -1228,6 +1228,8 @@ renderer.setAnimationLoop(() => {
   drawSpeedLines();
   updateCamera();
 
+  if (typeof devUpdateOverlays === 'function') devUpdateOverlays();
+
   renderer.render(scene, camera);
 });
 
@@ -1259,6 +1261,794 @@ renderer.setAnimationLoop(() => {
     ai.trackT = t;
   });
 })();
+
+
+// ===========================================================================
+// DEV MODE — press ` (backtick / tilde key) to toggle
+// ===========================================================================
+let devModeActive = false;
+let devSelectedPtIdx = null;
+let devDragging = false;
+
+const devTrackSettings = {
+  roadWidth: 20, curbWidth: 2, heightScale: 1,
+  roadColor: '#383840', curbColorA: '#ff1a1a',
+  curbColorB: '#ffffff', grassColor: '#3d8a2f',
+};
+
+const devCarSettings = {
+  bodyColor: '#38bdf8', bodyWidth: 3, bodyLength: 5, bodyHeight: 1.2,
+  cockpitColor: '#1a1a2e', cockpitStyle: 'Normal',
+  wheelColor: '#111111', wheelSize: 0.55, wheelWidth: 0.5,
+  stripeColor: '#ff0000', stripeStyle: 'None', racingNumber: 7,
+};
+
+let devShowWaypoints = false, devShowFPS = false;
+let devShowHitboxes  = false, devInvincible = false, devFlyMode = false;
+
+const ORIG_CTRL_PTS = CTRL_PTS.map(p => p.clone());
+
+// ── Utilities ───────────────────────────────────────────────────────────────
+function hexToRGB01(h) {
+  return [parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255, parseInt(h.slice(5,7),16)/255];
+}
+
+// ── Build kart group from settings (used by game and car preview) ────────────
+function buildKartFromSettings(s) {
+  const g = new THREE.Group();
+  const bw=s.bodyWidth, bl=s.bodyLength, bh=s.bodyHeight;
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(bw, bh, bl),
+    new THREE.MeshLambertMaterial({color: new THREE.Color(s.bodyColor)}));
+  body.position.y = bh/2 + 0.4; body.castShadow = true; g.add(body);
+
+  let ckg;
+  switch (s.cockpitStyle) {
+    case 'Bubble':   ckg = new THREE.SphereGeometry(bw*.35, 8, 6); break;
+    case 'Open Top': ckg = new THREE.BoxGeometry(bw*.55, bh*.4, bl*.4); break;
+    case 'Racing':   ckg = new THREE.CylinderGeometry(bw*.22, bw*.32, bh*.65, 6); break;
+    default:         ckg = new THREE.BoxGeometry(bw*.6, bh*.65, bl*.44);
+  }
+  const ck = new THREE.Mesh(ckg, new THREE.MeshLambertMaterial({color: new THREE.Color(s.cockpitColor)}));
+  ck.position.set(0, bh + 0.4 + bh*.3, -bl*.06); ck.castShadow = true; g.add(ck);
+
+  const wg = new THREE.CylinderGeometry(s.wheelSize, s.wheelSize, s.wheelWidth, 10);
+  const wm = new THREE.MeshLambertMaterial({color: new THREE.Color(s.wheelColor)});
+  const wxp = bw/2 + s.wheelWidth*.45, wy = s.wheelSize, wf = bl*.38;
+  [[-wxp,wy,wf],[wxp,wy,wf],[-wxp,wy,-wf],[wxp,wy,-wf]].forEach(([px,py,pz]) => {
+    const w = new THREE.Mesh(wg, wm);
+    w.rotation.z = Math.PI/2; w.position.set(px, py, pz); w.castShadow = true; g.add(w);
+  });
+
+  if (s.stripeStyle && s.stripeStyle !== 'None') {
+    const sm = new THREE.MeshLambertMaterial({color: new THREE.Color(s.stripeColor)});
+    if (s.stripeStyle === 'Side Stripe') {
+      [-1,1].forEach(side => {
+        const st = new THREE.Mesh(new THREE.BoxGeometry(.12, bh*.28, bl*.85), sm);
+        st.position.set(side*(bw*.51), bh*.5+.4, 0); g.add(st);
+      });
+    } else if (s.stripeStyle === 'Hood Stripe') {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(bw*.18, .08, bl*.88), sm);
+      st.position.set(0, bh+.42, 0); g.add(st);
+    } else if (s.stripeStyle === 'Racing Number') {
+      const nb = new THREE.Mesh(new THREE.BoxGeometry(bw*.5, bh*.5, .12), sm);
+      nb.position.set(0, bh*.65+.4, bl*.51); g.add(nb);
+    }
+  }
+  return g;
+}
+
+// ── rebuildPlayerKart ────────────────────────────────────────────────────────
+function rebuildPlayerKart() {
+  scene.remove(player.mesh);
+  player.mesh = buildKartFromSettings(devCarSettings);
+  player.mesh.position.copy(player.pos);
+  player.mesh.rotation.set(0, player.angle, 0);
+  scene.add(player.mesh);
+}
+
+// ── buildDevTrackMesh ────────────────────────────────────────────────────────
+function buildDevTrackMesh() {
+  const verts=[], idx=[], uvs=[], colors=[];
+  const N=TRACK_SEGMENTS, up=new THREE.Vector3(0,1,0);
+  const rw=devTrackSettings.roadWidth, cw=devTrackSettings.curbWidth;
+  const rc=hexToRGB01(devTrackSettings.roadColor);
+  const ca=hexToRGB01(devTrackSettings.curbColorA);
+  const cb=hexToRGB01(devTrackSettings.curbColorB);
+  const gc=hexToRGB01(devTrackSettings.grassColor);
+
+  for (let i=0; i<=N; i++) {
+    const t=i/N, pos=trackCurve.getPointAt(t);
+    const tan=trackCurve.getTangentAt(t).normalize();
+    const fv=new THREE.Vector3(tan.x,0,tan.z);
+    const ft=fv.length()>.0001 ? fv.normalize() : new THREE.Vector3(1,0,0);
+    const right=new THREE.Vector3().crossVectors(ft,up).normalize();
+    [
+      pos.clone().addScaledVector(right, -(rw/2+cw+6)),
+      pos.clone().addScaledVector(right, -(rw/2+cw)),
+      pos.clone().addScaledVector(right, -(rw/2)),
+      pos.clone().addScaledVector(right,  (rw/2)),
+      pos.clone().addScaledVector(right,  (rw/2+cw)),
+      pos.clone().addScaledVector(right,  (rw/2+cw+6)),
+    ].forEach(v => { verts.push(v.x,v.y,v.z); uvs.push(0,t*10); });
+    const tog=Math.floor(t*30)%2===0, cc=tog?ca:cb;
+    [gc,cc,rc,rc,cc,gc].forEach(c => colors.push(...c));
+  }
+  for (let i=0; i<N; i++) for (let j=0; j<5; j++) {
+    const a=i*6+j, b=i*6+j+1, c=(i+1)*6+j, d=(i+1)*6+j+1;
+    idx.push(a,c,b,b,c,d);
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,2));
+  geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors,3));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true, side:THREE.DoubleSide});
+  const mesh=new THREE.Mesh(geo,mat); mesh.receiveShadow=true; mesh.name='track';
+  return mesh;
+}
+
+// ── rebuildTrack ─────────────────────────────────────────────────────────────
+function rebuildTrack() {
+  scene.remove(trackMesh);
+  const hs=devTrackSettings.heightScale;
+  const pts=CTRL_PTS.map(p => new THREE.Vector3(p.x, p.y*hs, p.z));
+  trackCurve=new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
+  const sp=trackCurve.getSpacedPoints(TRACK_SAMPLES);
+  for (let i=0; i<=TRACK_SAMPLES; i++) {
+    trackPoints[i]=sp[i];
+    trackTangents[i]=trackCurve.getTangentAt(i/TRACK_SAMPLES).normalize();
+  }
+  trackMesh=buildDevTrackMesh(); scene.add(trackMesh);
+
+  // Rebuild item boxes
+  itemBoxMeshes.forEach(m => scene.remove(m));
+  itemBoxes.length=0; itemBoxMeshes.length=0;
+  const cnt = parseInt(document.getElementById('dev-item-box-count')?.value ?? ITEM_BOX_COUNT) || ITEM_BOX_COUNT;
+  for (let i=0; i<cnt; i++) createItemBox((i+.5)/cnt);
+
+  // Refresh minimap data
+  mmTrackPts=trackCurve.getSpacedPoints(120);
+  mmMinX=Infinity; mmMaxX=-Infinity; mmMinZ=Infinity; mmMaxZ=-Infinity;
+  mmTrackPts.forEach(p=>{mmMinX=Math.min(mmMinX,p.x);mmMaxX=Math.max(mmMaxX,p.x);mmMinZ=Math.min(mmMinZ,p.z);mmMaxZ=Math.max(mmMaxZ,p.z);});
+  mmRangeX=mmMaxX-mmMinX||1; mmRangeZ=mmMaxZ-mmMinZ||1;
+
+  // Refresh waypoint markers if visible
+  if (devShowWaypoints) devToggleWaypoints(true);
+  if (devModeActive) devDrawEditorMinimap();
+}
+
+// ── Debug overlays ───────────────────────────────────────────────────────────
+const devWaypointMeshes=[];
+let   devHitboxMeshes=[];
+let   devFpsFrames=0, devFpsLast=performance.now(), devFpsValue=0;
+
+function devToggleWaypoints(on) {
+  devWaypointMeshes.forEach(m => scene.remove(m));
+  devWaypointMeshes.length=0;
+  if (!on) return;
+  const geo=new THREE.SphereGeometry(.55, 5, 4);
+  const mat=new THREE.MeshBasicMaterial({color:0x00ff88});
+  for (let i=0; i<TRACK_SAMPLES; i+=5) {
+    const m=new THREE.Mesh(geo, mat);
+    m.position.copy(trackPoints[i]).add(new THREE.Vector3(0,1.5,0));
+    scene.add(m); devWaypointMeshes.push(m);
+  }
+}
+
+function devToggleHitboxes(on) {
+  devHitboxMeshes.forEach(h => scene.remove(h));
+  devHitboxMeshes=[];
+  if (!on) return;
+  const mat=new THREE.MeshBasicMaterial({color:0xff4444, wireframe:true});
+  [player,...aiKarts].forEach(() => {
+    const h=new THREE.Mesh(new THREE.BoxGeometry(3,2.5,5.5), mat);
+    scene.add(h); devHitboxMeshes.push(h);
+  });
+}
+
+function devUpdateOverlays() {
+  if (devShowFPS) {
+    devFpsFrames++;
+    const now=performance.now();
+    if (now-devFpsLast>600) {
+      devFpsValue=Math.round(devFpsFrames/((now-devFpsLast)/1000));
+      devFpsFrames=0; devFpsLast=now;
+    }
+    const el=document.getElementById('dev-fps-display');
+    if (el) el.textContent=`FPS: ${devFpsValue}`;
+  }
+  if (devShowHitboxes) {
+    [player,...aiKarts].forEach((k,i) => {
+      if (devHitboxMeshes[i]) {
+        devHitboxMeshes[i].position.copy(k.pos);
+        devHitboxMeshes[i].position.y += 1.25;
+        devHitboxMeshes[i].rotation.y = k.angle;
+      }
+    });
+  }
+  if (devInvincible) player.explodeFrames=0;
+  if (devFlyMode && raceState==='racing') {
+    if (keys.has('KeyQ')) { player.pos.y+=0.4; player.mesh.position.y=player.pos.y; }
+    if (keys.has('KeyE')) { player.pos.y=Math.max(player.pos.y-0.4, -1); player.mesh.position.y=player.pos.y; }
+  }
+}
+
+// ── Editor minimap helpers ───────────────────────────────────────────────────
+function devGetPtBounds() {
+  let x0=Infinity, x1=-Infinity, z0=Infinity, z1=-Infinity;
+  CTRL_PTS.forEach(p=>{x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);z0=Math.min(z0,p.z);z1=Math.max(z1,p.z);});
+  const pad=45;
+  return {x0:x0-pad, x1:x1+pad, z0:z0-pad, z1:z1+pad, rx:(x1+pad)-(x0-pad)||1, rz:(z1+pad)-(z0-pad)||1};
+}
+
+function devW2C(x, z, W, H) {
+  const b=devGetPtBounds(), mg=12;
+  return {cx:(x-b.x0)/b.rx*(W-2*mg)+mg, cy:(z-b.z0)/b.rz*(H-2*mg)+mg};
+}
+
+function devC2W(cx, cy, W, H) {
+  const b=devGetPtBounds(), mg=12;
+  return {x:(cx-mg)/(W-2*mg)*b.rx+b.x0, z:(cy-mg)/(H-2*mg)*b.rz+b.z0};
+}
+
+function devDrawEditorMinimap() {
+  const canvas=document.getElementById('dev-editor-map');
+  if (!canvas) return;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0d0d1a'; ctx.fillRect(0,0,W,H);
+
+  // Draw spline
+  ctx.strokeStyle='#555'; ctx.lineWidth=2;
+  ctx.beginPath();
+  const pts=trackCurve.getSpacedPoints(120);
+  pts.forEach((p,i)=>{
+    const {cx,cy}=devW2C(p.x,p.z,W,H);
+    if(i===0) ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);
+  });
+  ctx.closePath(); ctx.stroke();
+
+  // Draw control points
+  CTRL_PTS.forEach((p,i)=>{
+    const {cx,cy}=devW2C(p.x,p.z,W,H);
+    ctx.beginPath(); ctx.arc(cx,cy,i===devSelectedPtIdx?8:6,0,Math.PI*2);
+    ctx.fillStyle=i===devSelectedPtIdx?'#f59e0b':'#22d3ee';
+    ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='9px monospace'; ctx.fillText(i, cx+8, cy-4);
+  });
+}
+
+function devUpdatePtCoordsDisplay() {
+  const el=document.getElementById('dev-pt-coords');
+  if (!el) return;
+  if (devSelectedPtIdx===null) { el.innerHTML='<span style="color:#666;">click a point to select</span>'; return; }
+  const p=CTRL_PTS[devSelectedPtIdx];
+  el.innerHTML=`<span style="color:#22d3ee;">Pt ${devSelectedPtIdx}</span>
+    &nbsp; X:<span id="dev-px-val" style="color:#fff;">${p.x.toFixed(1)}</span>
+    &nbsp; Z:<span id="dev-pz-val" style="color:#fff;">${p.z.toFixed(1)}</span>`;
+}
+
+// ── Car preview sub-scene ────────────────────────────────────────────────────
+let devCarPreviewRenderer=null, devCarPreviewScene=null, devCarPreviewCamera=null;
+let devCarPreviewMesh=null, devCarPreviewAnimId=null;
+
+function devInitCarPreview() {
+  const canvas=document.getElementById('dev-car-preview');
+  if (!canvas || devCarPreviewRenderer) return;
+  devCarPreviewRenderer=new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  devCarPreviewRenderer.setSize(310, 220);
+  devCarPreviewRenderer.setPixelRatio(Math.min(devicePixelRatio,2));
+
+  devCarPreviewScene=new THREE.Scene();
+  devCarPreviewScene.background=new THREE.Color(0x0d0d1a);
+  devCarPreviewCamera=new THREE.PerspectiveCamera(50, 310/220, 0.1, 100);
+  devCarPreviewCamera.position.set(9, 6, 11);
+  devCarPreviewCamera.lookAt(0, 1.5, 0);
+
+  devCarPreviewScene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dl=new THREE.DirectionalLight(0xffffff, 1.4);
+  dl.position.set(5,10,5); devCarPreviewScene.add(dl);
+  devCarPreviewScene.add(new THREE.HemisphereLight(0x87ceeb, 0x333333, 0.4));
+
+  devUpdateCarPreview();
+  function animPrev() {
+    devCarPreviewAnimId=requestAnimationFrame(animPrev);
+    if (devCarPreviewMesh) devCarPreviewMesh.rotation.y+=0.012;
+    devCarPreviewRenderer.render(devCarPreviewScene, devCarPreviewCamera);
+  }
+  animPrev();
+}
+
+function devUpdateCarPreview() {
+  if (!devCarPreviewScene) return;
+  if (devCarPreviewMesh) { devCarPreviewScene.remove(devCarPreviewMesh); devCarPreviewMesh=null; }
+  devCarPreviewMesh=buildKartFromSettings(devCarSettings);
+  devCarPreviewScene.add(devCarPreviewMesh);
+}
+
+// ── HTML builder helpers ─────────────────────────────────────────────────────
+function devSec(title, color, content) {
+  return `<div style="margin-bottom:14px;">
+    <div style="color:${color};font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
+      border-bottom:1px solid ${color}44;padding-bottom:3px;margin-bottom:7px;">${title}</div>
+    ${content}
+  </div>`;
+}
+function devSliderHTML(id, label, min, max, step, val, unit='') {
+  return `<div style="margin-bottom:7px;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:1px;">
+      <span>${label}</span><span id="${id}-val" style="color:#fff;min-width:40px;text-align:right;">${val}${unit}</span>
+    </div>
+    <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}"
+      style="width:100%;height:4px;accent-color:#555;cursor:pointer;">
+  </div>`;
+}
+function devColorHTML(id, label, val) {
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+    <span>${label}</span>
+    <input type="color" id="${id}" value="${val}" style="width:34px;height:20px;border:none;background:none;cursor:pointer;padding:0;border-radius:2px;">
+  </div>`;
+}
+function devSelectHTML(id, label, opts, val) {
+  const o=opts.map(v=>`<option value="${v}"${v==val?' selected':''}>${v}</option>`).join('');
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+    <span>${label}</span>
+    <select id="${id}" style="background:#12121f;color:#ccc;border:1px solid #333;padding:2px 5px;border-radius:3px;font-size:11px;font-family:monospace;">${o}</select>
+  </div>`;
+}
+function devBtnHTML(id, label, bg='#2a2a3a') {
+  return `<button id="${id}" style="width:100%;padding:6px 4px;background:${bg};color:#eee;border:1px solid #444;border-radius:4px;cursor:pointer;margin-bottom:5px;font-family:monospace;font-size:11px;">${label}</button>`;
+}
+function devToggleHTML(id, label) {
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+    <span>${label}</span>
+    <input type="checkbox" id="${id}" style="width:16px;height:16px;cursor:pointer;accent-color:#4ade80;">
+  </div>`;
+}
+
+// ── Build tab HTML strings ───────────────────────────────────────────────────
+function buildMapTabHTML() {
+  return devSec('Track Control Points', '#22d3ee', `
+    <canvas id="dev-editor-map" width="312" height="260"
+      style="display:block;margin:0 auto 8px;border:1px solid #333;border-radius:4px;cursor:crosshair;"></canvas>
+    <div id="dev-pt-coords" style="margin-bottom:6px;min-height:16px;font-size:11px;">
+      <span style="color:#666;">click a point to select</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px;">
+      ${devBtnHTML('dev-add-pt',    '＋ Add Pt',   '#1d3a6e')}
+      ${devBtnHTML('dev-rem-pt',    '－ Remove',   '#5a1d1d')}
+      ${devBtnHTML('dev-reset-trk', '↺ Reset',     '#2a2a3a')}
+    </div>`) +
+  devSec('Track Properties', '#22d3ee', `
+    ${devSliderHTML('dev-road-width',    'Road Width',     10, 40,  1,   20)}
+    ${devSliderHTML('dev-curb-width',    'Curb Width',      0,  6,  0.5,  2)}
+    ${devSliderHTML('dev-height-scale',  'Height Scale',    0,  3,  0.1,  1)}`) +
+  devSec('Road Paint', '#22d3ee', `
+    ${devColorHTML('dev-road-color',   'Road Color',    '#383840')}
+    ${devColorHTML('dev-curb-color-a', 'Curb Color A',  '#ff1a1a')}
+    ${devColorHTML('dev-curb-color-b', 'Curb Color B',  '#ffffff')}
+    ${devColorHTML('dev-grass-color',  'Grass Color',   '#3d8a2f')}`) +
+  devSec('Export / Import', '#22d3ee', `
+    ${devBtnHTML('dev-export-track', '⬇ Export Track JSON', '#14532d')}
+    ${devBtnHTML('dev-import-track', '⬆ Import Track JSON', '#172554')}
+    <input type="file" id="dev-import-file" accept=".json" style="display:none;">`);
+}
+
+function buildCarTabHTML() {
+  return `<canvas id="dev-car-preview" width="310" height="220"
+    style="display:block;margin:0 auto 10px;border:1px solid #333;border-radius:4px;"></canvas>` +
+  devSec('Body', '#fbbf24', `
+    ${devColorHTML('dev-car-body-color',  'Body Color',  '#38bdf8')}
+    ${devSliderHTML('dev-car-body-width',  'Width',   1.5, 5,   0.1,  3)}
+    ${devSliderHTML('dev-car-body-length', 'Length',  3,   8,   0.1,  5)}
+    ${devSliderHTML('dev-car-body-height', 'Height',  0.5, 2,   0.1,  1.2)}`) +
+  devSec('Cockpit', '#fbbf24', `
+    ${devColorHTML('dev-car-cockpit-color', 'Cockpit Color', '#1a1a2e')}
+    ${devSelectHTML('dev-car-cockpit-style','Cockpit Style',['Normal','Bubble','Open Top','Racing'],'Normal')}`) +
+  devSec('Wheels', '#fbbf24', `
+    ${devColorHTML('dev-car-wheel-color',  'Wheel Color',  '#111111')}
+    ${devSliderHTML('dev-car-wheel-size',   'Wheel Size',  0.3, 1.2, 0.05, 0.55)}
+    ${devSliderHTML('dev-car-wheel-width',  'Wheel Width', 0.3, 1.0, 0.05, 0.5)}`) +
+  devSec('Paint Job', '#fbbf24', `
+    ${devColorHTML('dev-car-stripe-color',  'Stripe Color', '#ff0000')}
+    ${devSelectHTML('dev-car-stripe-style', 'Stripe Style', ['None','Side Stripe','Hood Stripe','Racing Number'], 'None')}
+    <div id="dev-num-row" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+        <span>Racing #</span>
+        <input type="number" id="dev-car-racing-num" min="0" max="99" value="7"
+          style="width:46px;background:#12121f;color:#ccc;border:1px solid #333;padding:2px 4px;border-radius:3px;font-family:monospace;font-size:11px;">
+      </div>
+    </div>`) +
+  `<div style="margin-bottom:10px;">
+    ${devBtnHTML('dev-apply-kart', '✔ Apply to Game', '#064e3b')}
+  </div>` +
+  devSec('Presets', '#fbbf24', `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+      ${devBtnHTML('dev-preset-classic', 'Classic', '#374151')}
+      ${devBtnHTML('dev-preset-speeder', 'Speeder', '#172554')}
+      ${devBtnHTML('dev-preset-tank',    'Tank',    '#4a1111')}
+    </div>`);
+}
+
+function buildGameTabHTML() {
+  return devSec('Race Settings', '#4ade80', `
+    ${devSelectHTML('dev-total-laps',       'Total Laps',         ['1','2','3','4','5','6','7','8','9','10'],'3')}
+    ${devSelectHTML('dev-ai-count',         'AI Count (active)',  ['0','1','2','3'],'3')}
+    ${devSliderHTML('dev-ai-speed',         'AI Speed',           0.2, 0.9, 0.01, 0.5)}
+    ${devSliderHTML('dev-player-max-speed', 'Player Max Speed',   0.2, 1.5, 0.01, 0.55)}
+    ${devSliderHTML('dev-player-accel',     'Player Accel',       0.005, 0.08, 0.001, 0.028)}`) +
+  devSec('World Settings', '#4ade80', `
+    ${devSliderHTML('dev-fog-near',    'Fog Near',      50,  500,  10,  200)}
+    ${devSliderHTML('dev-fog-far',     'Fog Far',       200, 1000, 10,  700)}
+    ${devColorHTML('dev-sky-color',   'Sky Color',    '#87ceeb')}
+    ${devSliderHTML('dev-sun-intensity','Sun Intensity', 0,  3,    0.1, 1.6)}
+    ${devSliderHTML('dev-time-of-day', 'Time of Day',   0,  24,   0.5, 12)}`) +
+  devSec('Item Settings', '#4ade80', `
+    ${devSliderHTML('dev-item-box-count', 'Item Box Count', 0,  20,  1,  10)}
+    ${devSliderHTML('dev-boost-duration', 'Boost Duration', 30, 360, 10, 180, ' fr')}
+    ${devSliderHTML('dev-boost-speed',    'Boost Speed',    0.5, 1.5, 0.01, 0.82)}`) +
+  devSec('Debug Overlays', '#4ade80', `
+    ${devToggleHTML('dev-show-waypoints','Show Waypoints')}
+    ${devToggleHTML('dev-show-fps',      'Show FPS')}
+    ${devToggleHTML('dev-show-hitboxes', 'Show Hitboxes')}
+    ${devToggleHTML('dev-invincible',    'Invincible Mode')}
+    ${devToggleHTML('dev-fly-mode',      'Fly Mode (Q=up, E=down)')}`);}
+
+// ── Inject panel ─────────────────────────────────────────────────────────────
+function createDevPanel() {
+  // Inject styles
+  const style=document.createElement('style');
+  style.textContent=`
+    #dev-panel input[type=range]::-webkit-slider-runnable-track{height:4px;background:#2a2a3a;border-radius:2px;}
+    #dev-panel input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#888;border-radius:50%;margin-top:-4px;cursor:pointer;}
+    #dev-panel button:hover{filter:brightness(1.2);}
+    .dev-tab-btn:hover{filter:brightness(1.3);}
+  `;
+  document.head.appendChild(style);
+
+  // DEV badge (top-center)
+  const badge=document.createElement('div');
+  badge.id='dev-badge';
+  badge.textContent='DEV';
+  badge.style.cssText='display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;font-family:monospace;font-size:11px;font-weight:bold;padding:2px 10px;border-radius:4px;z-index:500;letter-spacing:2px;pointer-events:none;';
+  document.body.appendChild(badge);
+
+  // FPS counter
+  const fpsdiv=document.createElement('div');
+  fpsdiv.id='dev-fps-display';
+  fpsdiv.style.cssText='display:none;position:fixed;top:40px;left:8px;color:#0f0;font-family:monospace;font-size:13px;background:rgba(0,0,0,0.55);padding:2px 7px;border-radius:3px;z-index:500;pointer-events:none;';
+  document.body.appendChild(fpsdiv);
+
+  // Panel
+  const panel=document.createElement('div');
+  panel.id='dev-panel';
+  panel.style.cssText='display:none;position:fixed;top:0;right:0;width:340px;height:100vh;background:rgba(15,15,25,0.97);color:#bbb;font-family:monospace;font-size:12px;z-index:400;border-left:1px solid #2a2a3a;box-shadow:-6px 0 24px rgba(0,0,0,0.7);overflow-y:auto;';
+
+  panel.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#0a0a14;border-bottom:1px solid #222;position:sticky;top:0;z-index:5;">
+      <span style="color:#888;font-size:13px;letter-spacing:1px;">⚙ DEV TOOLS</span>
+      <button id="dev-close-btn" style="background:none;border:1px solid #555;color:#aaa;cursor:pointer;padding:2px 8px;border-radius:3px;font-size:13px;font-family:monospace;">×</button>
+    </div>
+    <div id="dev-tabs" style="display:flex;background:#0d0d1a;border-bottom:1px solid #222;position:sticky;top:41px;z-index:5;">
+      <button class="dev-tab-btn" data-tab="map" style="flex:1;padding:8px 2px;background:#0f1a2a;border:none;color:#22d3ee;cursor:pointer;font-size:11px;font-family:monospace;border-bottom:2px solid #22d3ee;">🗺️ Map</button>
+      <button class="dev-tab-btn" data-tab="car" style="flex:1;padding:8px 2px;background:transparent;border:none;color:#666;cursor:pointer;font-size:11px;font-family:monospace;border-bottom:2px solid transparent;">🚗 Car</button>
+      <button class="dev-tab-btn" data-tab="game" style="flex:1;padding:8px 2px;background:transparent;border:none;color:#666;cursor:pointer;font-size:11px;font-family:monospace;border-bottom:2px solid transparent;">⚙️ Game</button>
+    </div>
+    <div id="dev-tab-map"  style="padding:12px 14px;">${buildMapTabHTML()}</div>
+    <div id="dev-tab-car"  style="padding:12px 14px;display:none;">${buildCarTabHTML()}</div>
+    <div id="dev-tab-game" style="padding:12px 14px;display:none;">${buildGameTabHTML()}</div>
+  `;
+  document.body.appendChild(panel);
+
+  // Tab switching
+  const tabColors={map:'#22d3ee', car:'#fbbf24', game:'#4ade80'};
+  panel.querySelectorAll('.dev-tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      panel.querySelectorAll('.dev-tab-btn').forEach(b=>{
+        b.style.background='transparent'; b.style.color='#666'; b.style.borderBottomColor='transparent';
+      });
+      btn.style.background=`${tabColors[btn.dataset.tab]}18`;
+      btn.style.color=tabColors[btn.dataset.tab];
+      btn.style.borderBottomColor=tabColors[btn.dataset.tab];
+      ['map','car','game'].forEach(t=>{ document.getElementById(`dev-tab-${t}`).style.display='none'; });
+      document.getElementById(`dev-tab-${btn.dataset.tab}`).style.display='block';
+      if (btn.dataset.tab==='map') devDrawEditorMinimap();
+      if (btn.dataset.tab==='car') devInitCarPreview();
+    });
+  });
+
+  document.getElementById('dev-close-btn').addEventListener('click',()=>toggleDevMode(false));
+
+  initMapControls();
+  initGameControls();
+}
+
+// ── Map editor control wiring ────────────────────────────────────────────────
+function initMapControls() {
+  const canvas=document.getElementById('dev-editor-map');
+
+  // Drag control points on minimap
+  canvas.addEventListener('mousedown', e=>{
+    const r=canvas.getBoundingClientRect();
+    const mx=e.clientX-r.left, my=e.clientY-r.top;
+    let best=null, bestD=Infinity;
+    CTRL_PTS.forEach((p,i)=>{
+      const {cx,cy}=devW2C(p.x, p.z, canvas.width, canvas.height);
+      const d=Math.hypot(mx-cx, my-cy);
+      if (d<bestD){bestD=d; best=i;}
+    });
+    if (bestD<14){ devSelectedPtIdx=best; devDragging=true; devUpdatePtCoordsDisplay(); devDrawEditorMinimap(); }
+  });
+  canvas.addEventListener('mousemove', e=>{
+    if (!devDragging || devSelectedPtIdx===null) return;
+    const r=canvas.getBoundingClientRect();
+    const {x,z}=devC2W(e.clientX-r.left, e.clientY-r.top, canvas.width, canvas.height);
+    CTRL_PTS[devSelectedPtIdx].x=x; CTRL_PTS[devSelectedPtIdx].z=z;
+    devUpdatePtCoordsDisplay(); devDrawEditorMinimap(); rebuildTrack();
+  });
+  canvas.addEventListener('mouseup',   ()=>{ devDragging=false; });
+  canvas.addEventListener('mouseleave',()=>{ devDragging=false; });
+
+  // Add / Remove / Reset
+  document.getElementById('dev-add-pt').addEventListener('click',()=>{
+    const n=CTRL_PTS.length;
+    const last=CTRL_PTS[n-1], first=CTRL_PTS[0];
+    CTRL_PTS.push(new THREE.Vector3((last.x+first.x)/2, (last.y+first.y)/2, (last.z+first.z)/2));
+    devDrawEditorMinimap(); rebuildTrack();
+  });
+  document.getElementById('dev-rem-pt').addEventListener('click',()=>{
+    if (CTRL_PTS.length<=4) return;
+    const i=devSelectedPtIdx!==null ? devSelectedPtIdx : CTRL_PTS.length-1;
+    CTRL_PTS.splice(i,1);
+    devSelectedPtIdx=null; devUpdatePtCoordsDisplay(); devDrawEditorMinimap(); rebuildTrack();
+  });
+  document.getElementById('dev-reset-trk').addEventListener('click',()=>{
+    CTRL_PTS.length=0;
+    ORIG_CTRL_PTS.forEach(p=>CTRL_PTS.push(p.clone()));
+    devTrackSettings.roadWidth=20; devTrackSettings.curbWidth=2; devTrackSettings.heightScale=1;
+    document.getElementById('dev-road-width').value=20;   document.getElementById('dev-road-width-val').textContent='20';
+    document.getElementById('dev-curb-width').value=2;    document.getElementById('dev-curb-width-val').textContent='2';
+    document.getElementById('dev-height-scale').value=1;  document.getElementById('dev-height-scale-val').textContent='1';
+    devSelectedPtIdx=null; devUpdatePtCoordsDisplay(); devDrawEditorMinimap(); rebuildTrack();
+  });
+
+  // Track sliders
+  function wireSlider(id, key, obj, decimals, cb) {
+    const el=document.getElementById(id), lbl=document.getElementById(id+'-val');
+    if (!el) return;
+    el.addEventListener('input',()=>{
+      obj[key]=parseFloat(el.value); lbl.textContent=parseFloat(el.value).toFixed(decimals);
+      if (cb) cb();
+    });
+  }
+  wireSlider('dev-road-width',   'roadWidth',   devTrackSettings, 0, rebuildTrack);
+  wireSlider('dev-curb-width',   'curbWidth',   devTrackSettings, 1, rebuildTrack);
+  wireSlider('dev-height-scale', 'heightScale', devTrackSettings, 1, rebuildTrack);
+
+  // Road color pickers
+  function wireColor(id, key, obj, cb) {
+    const el=document.getElementById(id); if (!el) return;
+    el.addEventListener('input',()=>{ obj[key]=el.value; if(cb) cb(); });
+  }
+  wireColor('dev-road-color',   'roadColor',   devTrackSettings, rebuildTrack);
+  wireColor('dev-curb-color-a', 'curbColorA',  devTrackSettings, rebuildTrack);
+  wireColor('dev-curb-color-b', 'curbColorB',  devTrackSettings, rebuildTrack);
+  wireColor('dev-grass-color',  'grassColor',  devTrackSettings, rebuildTrack);
+
+  // Export / Import
+  document.getElementById('dev-export-track').addEventListener('click',()=>{
+    const data=JSON.stringify({
+      controlPoints: CTRL_PTS.map(p=>({x:p.x,y:p.y,z:p.z})),
+      roadWidth: devTrackSettings.roadWidth, curbWidth: devTrackSettings.curbWidth,
+      heightScale: devTrackSettings.heightScale,
+      roadColor: devTrackSettings.roadColor, curbColorA: devTrackSettings.curbColorA,
+      curbColorB: devTrackSettings.curbColorB, grassColor: devTrackSettings.grassColor,
+    }, null, 2);
+    const a=document.createElement('a');
+    a.href='data:application/json;charset=utf-8,'+encodeURIComponent(data);
+    a.download='track.json'; a.click();
+  });
+  document.getElementById('dev-import-track').addEventListener('click',()=>{
+    document.getElementById('dev-import-file').click();
+  });
+  document.getElementById('dev-import-file').addEventListener('change', e=>{
+    const file=e.target.files[0]; if (!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try {
+        const d=JSON.parse(ev.target.result);
+        CTRL_PTS.length=0;
+        d.controlPoints.forEach(p=>CTRL_PTS.push(new THREE.Vector3(p.x,p.y,p.z)));
+        if (d.roadWidth!==undefined) devTrackSettings.roadWidth=d.roadWidth;
+        if (d.curbWidth!==undefined) devTrackSettings.curbWidth=d.curbWidth;
+        if (d.heightScale!==undefined) devTrackSettings.heightScale=d.heightScale;
+        if (d.roadColor)   devTrackSettings.roadColor=d.roadColor;
+        if (d.curbColorA)  devTrackSettings.curbColorA=d.curbColorA;
+        if (d.curbColorB)  devTrackSettings.curbColorB=d.curbColorB;
+        if (d.grassColor)  devTrackSettings.grassColor=d.grassColor;
+        // Sync slider UI
+        ['dev-road-width','dev-curb-width','dev-height-scale'].forEach(sid=>{
+          const se=document.getElementById(sid);
+          const key=sid.replace('dev-','').replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
+          if (se && devTrackSettings[key]!==undefined){ se.value=devTrackSettings[key]; document.getElementById(sid+'-val').textContent=devTrackSettings[key]; }
+        });
+        devSelectedPtIdx=null; devUpdatePtCoordsDisplay(); devDrawEditorMinimap(); rebuildTrack();
+      } catch(err) { alert('Invalid track JSON: '+err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value='';
+  });
+
+  // Initial minimap draw
+  devDrawEditorMinimap();
+}
+
+// ── Car designer controls ────────────────────────────────────────────────────
+function initCarControls() {
+  // Initialize preview if car tab is visible
+  devInitCarPreview();
+
+  function syncCar(){ devUpdateCarPreview(); }
+
+  // Color pickers
+  [['dev-car-body-color','bodyColor'],['dev-car-cockpit-color','cockpitColor'],
+   ['dev-car-wheel-color','wheelColor'],['dev-car-stripe-color','stripeColor']].forEach(([id,key])=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.addEventListener('input',()=>{ devCarSettings[key]=el.value; syncCar(); });
+  });
+  // Sliders
+  function carSlider(id, key, dec) {
+    const el=document.getElementById(id), lbl=document.getElementById(id+'-val');
+    if (!el) return;
+    el.addEventListener('input',()=>{ devCarSettings[key]=parseFloat(el.value); if(lbl) lbl.textContent=parseFloat(el.value).toFixed(dec); syncCar(); });
+  }
+  carSlider('dev-car-body-width', 'bodyWidth', 1);
+  carSlider('dev-car-body-length','bodyLength',1);
+  carSlider('dev-car-body-height','bodyHeight',1);
+  carSlider('dev-car-wheel-size', 'wheelSize', 2);
+  carSlider('dev-car-wheel-width','wheelWidth',2);
+
+  // Cockpit style
+  const ckSel=document.getElementById('dev-car-cockpit-style');
+  if (ckSel) ckSel.addEventListener('change',()=>{ devCarSettings.cockpitStyle=ckSel.value; syncCar(); });
+  // Stripe style
+  const stSel=document.getElementById('dev-car-stripe-style');
+  if (stSel) stSel.addEventListener('change',()=>{
+    devCarSettings.stripeStyle=stSel.value;
+    const nr=document.getElementById('dev-num-row');
+    if (nr) nr.style.display=stSel.value==='Racing Number'?'block':'none';
+    syncCar();
+  });
+  const numIn=document.getElementById('dev-car-racing-num');
+  if (numIn) numIn.addEventListener('input',()=>{ devCarSettings.racingNumber=parseInt(numIn.value)||0; syncCar(); });
+
+  // Apply to game
+  document.getElementById('dev-apply-kart')?.addEventListener('click', rebuildPlayerKart);
+
+  // Presets
+  const presets={
+    classic:{bodyColor:'#38bdf8',bodyWidth:3,bodyLength:5,bodyHeight:1.2,cockpitColor:'#1a1a2e',cockpitStyle:'Normal',wheelColor:'#111111',wheelSize:.55,wheelWidth:.5,stripeStyle:'None'},
+    speeder:{bodyColor:'#f43f5e',bodyWidth:2.2,bodyLength:6.5,bodyHeight:0.85,cockpitColor:'#0f0f1a',cockpitStyle:'Racing',wheelColor:'#222222',wheelSize:.42,wheelWidth:.38,stripeStyle:'Side Stripe',stripeColor:'#ff9800'},
+    tank:   {bodyColor:'#4b5320',bodyWidth:4.5,bodyLength:4.5,bodyHeight:1.8,cockpitColor:'#2a2a1a',cockpitStyle:'Open Top',wheelColor:'#333333',wheelSize:.9,wheelWidth:.85,stripeStyle:'Hood Stripe',stripeColor:'#ffd700'},
+  };
+  ['classic','speeder','tank'].forEach(name=>{
+    document.getElementById(`dev-preset-${name}`)?.addEventListener('click',()=>{
+      Object.assign(devCarSettings, presets[name]);
+      // Sync UI
+      document.getElementById('dev-car-body-color').value=devCarSettings.bodyColor;
+      document.getElementById('dev-car-cockpit-color').value=devCarSettings.cockpitColor;
+      document.getElementById('dev-car-wheel-color').value=devCarSettings.wheelColor;
+      document.getElementById('dev-car-stripe-color').value=devCarSettings.stripeColor||'#ff0000';
+      ['dev-car-body-width','dev-car-body-length','dev-car-body-height','dev-car-wheel-size','dev-car-wheel-width'].forEach(sid=>{
+        const el=document.getElementById(sid), lbl=document.getElementById(sid+'-val');
+        const key=sid.replace('dev-car-','').replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
+        if (el && devCarSettings[key]!==undefined){ el.value=devCarSettings[key]; if(lbl) lbl.textContent=parseFloat(devCarSettings[key]).toFixed(sid.includes('body')?1:2); }
+      });
+      document.getElementById('dev-car-cockpit-style').value=devCarSettings.cockpitStyle||'Normal';
+      document.getElementById('dev-car-stripe-style').value=devCarSettings.stripeStyle||'None';
+      const nr=document.getElementById('dev-num-row');
+      if (nr) nr.style.display=devCarSettings.stripeStyle==='Racing Number'?'block':'none';
+      syncCar();
+    });
+  });
+}
+
+// ── Game settings control wiring ─────────────────────────────────────────────
+function initGameControls() {
+  function gSlider(id, apply, dec, unit='') {
+    const el=document.getElementById(id), lbl=document.getElementById(id+'-val');
+    if (!el) return;
+    el.addEventListener('input',()=>{ const v=parseFloat(el.value); if(lbl) lbl.textContent=v.toFixed(dec)+(unit??' ').trim(); apply(v); });
+  }
+  function gSelect(id, apply) {
+    const el=document.getElementById(id); if (!el) return;
+    el.addEventListener('change',()=>apply(el.value));
+  }
+
+  gSelect('dev-total-laps',  v=>{ TOTAL_LAPS=parseInt(v); });
+  gSelect('dev-ai-count',    v=>{ const n=parseInt(v); aiKarts.forEach((ai,i)=>{ ai.mesh.visible=i<n; }); });
+  gSlider('dev-ai-speed',    v=>aiKarts.forEach(ai=>{ ai.targetSpeed=v; }), 2);
+  gSlider('dev-player-max-speed', v=>{ PLAYER_MAX_SPEED=v; }, 2);
+  gSlider('dev-player-accel',     v=>{ PLAYER_ACCEL=v; }, 3);
+
+  gSlider('dev-fog-near', v=>{ scene.fog.near=v; }, 0);
+  gSlider('dev-fog-far',  v=>{ scene.fog.far=v;  }, 0);
+  document.getElementById('dev-sky-color')?.addEventListener('input', e=>{
+    scene.background.set(e.target.value);
+    scene.fog.color.set(e.target.value);
+  });
+  gSlider('dev-sun-intensity', v=>{ sunLight.intensity=v; }, 1);
+  gSlider('dev-time-of-day', v=>{
+    const angle=(v-12)/24*Math.PI*2;
+    const h=Math.max(0.1, Math.sin(angle+Math.PI/2));
+    sunLight.position.set(Math.cos(angle)*200, h*250, Math.sin(angle)*100);
+    if (v>=6 && v<=8) sunLight.color.set(0xff9944);       // sunrise
+    else if (v>=8 && v<=17) sunLight.color.set(0xfff5e0); // day
+    else if (v>=17 && v<=20) sunLight.color.set(0xff7733); // sunset
+    else sunLight.color.set(0x334466);                     // night
+    const nightFactor=Math.max(0,Math.min(1,(v-20)/4));
+    sunLight.intensity=1.6*(1-nightFactor)+0.15*nightFactor;
+    const lbl=document.getElementById('dev-sun-intensity-val');
+    if (lbl) lbl.textContent=sunLight.intensity.toFixed(1);
+  }, 1);
+
+  gSlider('dev-item-box-count', v=>{
+    itemBoxMeshes.forEach(m=>scene.remove(m));
+    itemBoxes.length=0; itemBoxMeshes.length=0;
+    const cnt=Math.round(v);
+    for (let i=0;i<cnt;i++) createItemBox((i+.5)/cnt);
+  }, 0);
+  gSlider('dev-boost-duration', v=>{ BOOST_DURATION=Math.round(v); }, 0, ' fr');
+  gSlider('dev-boost-speed',    v=>{ BOOST_SPEED=v; }, 2);
+
+  // Toggles
+  function wire(id, setter) {
+    const el=document.getElementById(id); if(!el) return;
+    el.addEventListener('change',()=>setter(el.checked));
+  }
+  wire('dev-show-waypoints', on=>{ devShowWaypoints=on; devToggleWaypoints(on); });
+  wire('dev-show-fps',       on=>{ devShowFPS=on; const el=document.getElementById('dev-fps-display'); if(el) el.style.display=on?'block':'none'; });
+  wire('dev-show-hitboxes',  on=>{ devShowHitboxes=on; devToggleHitboxes(on); });
+  wire('dev-invincible',     on=>{ devInvincible=on; });
+  wire('dev-fly-mode',       on=>{ devFlyMode=on; });
+}
+
+// ── Toggle dev mode ──────────────────────────────────────────────────────────
+function toggleDevMode(on) {
+  devModeActive=on;
+  const panel=document.getElementById('dev-panel');
+  const badge=document.getElementById('dev-badge');
+  if (panel) panel.style.display=on?'block':'none';
+  if (badge) badge.style.display=on?'block':'none';
+  if (on) {
+    devDrawEditorMinimap();
+    // Init car controls once panel is visible
+    const carTab=document.getElementById('dev-tab-car');
+    if (carTab && carTab.style.display!=='none') devInitCarPreview();
+  }
+}
+
+// ── Key handler ──────────────────────────────────────────────────────────────
+window.addEventListener('keydown', e=>{
+  if (e.code==='Backquote') {
+    e.preventDefault();
+    // If car tab was active when reopening, init preview
+    toggleDevMode(!devModeActive);
+    if (devModeActive) {
+      const activeCarTab=document.getElementById('dev-tab-car');
+      if (activeCarTab && activeCarTab.style.display!=='none') devInitCarPreview();
+    }
+  }
+});
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+createDevPanel();
+// Car controls need DOM elements from the panel, init after panel is created
+initCarControls();
 
 </script>
 </body>
