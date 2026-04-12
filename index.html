@@ -1236,11 +1236,11 @@ function drawSpeedLines() {
 renderer.setAnimationLoop(() => {
   // FPS tracking
   _devFPSFrames++;
-  const _devNow = performance.now();
-  if (_devNow - _devFPSTime >= 1000) {
+  const now = performance.now();
+  if (now - _devFPSTime >= 1000) {
     _devFPS = _devFPSFrames;
     _devFPSFrames = 0;
-    _devFPSTime   = _devNow;
+    _devFPSTime   = now;
     const _fpsEl = document.getElementById('dev-fps');
     if (_fpsEl) _fpsEl.textContent = _devFPS + ' fps';
   }
