@@ -1,0 +1,418 @@
+/* ===== Reset & Base ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+#game-wrapper {
+  position: relative;
+  width: 800px;
+  height: 600px;
+}
+
+#game-canvas {
+  display: block;
+  background: #2d5a27;
+  border: 2px solid #444;
+  border-radius: 4px;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+/* ===== HUD ===== */
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 13px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+#hud > * { pointer-events: auto; }
+
+#hud-coords {
+  font-family: 'Courier New', monospace;
+  color: #8f8;
+}
+
+#hud-mode {
+  font-weight: bold;
+  color: #ffd700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#dev-toggle-btn {
+  background: #333;
+  color: #ffd700;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+#dev-toggle-btn:hover { background: #555; }
+
+/* ===== Dev Panel ===== */
+#dev-panel {
+  position: absolute;
+  top: 0;
+  right: -320px;
+  width: 320px;
+  height: 600px;
+  background: #16213e;
+  border-left: 2px solid #0f3460;
+  overflow-y: auto;
+  z-index: 20;
+  transition: right 0.3s ease;
+  scrollbar-width: thin;
+  scrollbar-color: #0f3460 #16213e;
+}
+
+#dev-panel.visible {
+  right: 0;
+}
+
+#dev-panel.hidden {
+  right: -320px;
+}
+
+#dev-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #0f3460;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+#dev-panel-header h2 {
+  font-size: 16px;
+  color: #ffd700;
+}
+
+#dev-panel-close {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+#dev-panel-close:hover { color: #fff; }
+
+/* ===== Tabs ===== */
+#dev-tabs {
+  display: flex;
+  background: #1a1a40;
+  border-bottom: 2px solid #0f3460;
+}
+
+.dev-tab {
+  flex: 1;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.dev-tab:hover { color: #ccc; background: rgba(255,255,255,0.05); }
+.dev-tab.active { color: #ffd700; border-bottom-color: #ffd700; }
+
+.dev-tab-content {
+  display: none;
+  padding: 10px 14px;
+}
+
+.dev-tab-content.active { display: block; }
+
+/* ===== Tool Sections ===== */
+.tool-section {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.tool-section h3 {
+  font-size: 12px;
+  color: #4fc3f7;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-section label {
+  display: block;
+  font-size: 12px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+.tool-section input[type="range"] {
+  width: 70%;
+  vertical-align: middle;
+}
+
+.tool-section input[type="range"] + span {
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+/* ===== Map Tools ===== */
+#map-tools, #sprite-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.map-tool, .sprite-tool {
+  padding: 6px 8px;
+  background: #1a1a40;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.map-tool:hover, .sprite-tool:hover { background: #2a2a60; border-color: #555; }
+.map-tool.active, .sprite-tool.active { background: #0f3460; border-color: #4fc3f7; color: #fff; }
+
+/* ===== Tile Palette ===== */
+#tile-palette {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tile-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  image-rendering: pixelated;
+}
+
+.tile-swatch:hover { border-color: #888; }
+.tile-swatch.active { border-color: #ffd700; box-shadow: 0 0 6px rgba(255,215,0,0.5); }
+
+.tile-swatch canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 2px;
+  image-rendering: pixelated;
+}
+
+.tile-swatch .tile-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 7px;
+  text-align: center;
+  background: rgba(0,0,0,0.7);
+  color: #ccc;
+  padding: 1px;
+  border-radius: 0 0 2px 2px;
+}
+
+/* ===== Layer Controls ===== */
+#layer-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.layer-btn {
+  flex: 1;
+  padding: 5px;
+  background: #1a1a40;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #aaa;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.layer-btn:hover { background: #2a2a60; }
+.layer-btn.active { background: #0f3460; border-color: #4fc3f7; color: #fff; }
+
+/* ===== Action Buttons ===== */
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.action-buttons button {
+  padding: 5px 8px;
+  background: #1e3a5f;
+  border: 1px solid #2a5a8f;
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.action-buttons button:hover { background: #2a5a8f; color: #fff; }
+
+/* ===== Sprite Editor ===== */
+#sprite-editor-area {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+#sprite-canvas {
+  border: 1px solid #444;
+  background: repeating-conic-gradient(#333 0% 25%, #444 0% 50%) 50% / 16px 16px;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+
+#sprite-preview {
+  border: 1px solid #444;
+  background: #222;
+  image-rendering: pixelated;
+}
+
+/* ===== Color Palette ===== */
+#color-palette {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.color-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.color-swatch:hover { border-color: #888; }
+.color-swatch.active { border-color: #fff; box-shadow: 0 0 4px rgba(255,255,255,0.5); }
+
+/* ===== Frame List ===== */
+#frame-list {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+
+.frame-thumb {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #333;
+  border-radius: 3px;
+  cursor: pointer;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.frame-thumb:hover { border-color: #888; }
+.frame-thumb.active { border-color: #ffd700; }
+
+/* ===== Sprite Presets ===== */
+#sprite-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.preset-btn {
+  padding: 6px 4px;
+  background: #1a1a40;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 10px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.preset-btn:hover { background: #2a2a60; border-color: #555; }
+
+/* ===== Toast ===== */
+#toast {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #4fc3f7;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 30;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+#toast.hidden { opacity: 0; }
+#toast.visible { opacity: 1; }
+
+/* ===== Scrollbar ===== */
+#dev-panel::-webkit-scrollbar { width: 6px; }
+#dev-panel::-webkit-scrollbar-track { background: #16213e; }
+#dev-panel::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+/* ===== Select ===== */
+select {
+  background: #1a1a40;
+  color: #ccc;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+input[type="number"] {
+  background: #1a1a40;
+  color: #ccc;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+input[type="color"] {
+  width: 40px;
+  height: 30px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}

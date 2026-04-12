@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pokémon Adventure - Dev Mode</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="game-wrapper">
+    <canvas id="game-canvas" width="800" height="600"></canvas>
+
+    <!-- HUD overlay -->
+    <div id="hud">
+      <span id="hud-coords">X: 0  Y: 0</span>
+      <span id="hud-mode">PLAY MODE</span>
+      <button id="dev-toggle-btn" title="Toggle Dev Mode (D)">🛠 Dev Mode</button>
+    </div>
+
+    <!-- Dev Tools Panel -->
+    <div id="dev-panel" class="hidden">
+      <div id="dev-panel-header">
+        <h2>🛠 Dev Tools</h2>
+        <button id="dev-panel-close">✕</button>
+      </div>
+      <div id="dev-tabs">
+        <button class="dev-tab active" data-tab="map-editor">🗺 Map Editor</button>
+        <button class="dev-tab" data-tab="sprite-designer">🎨 Sprite Designer</button>
+        <button class="dev-tab" data-tab="world-settings">⚙ World Settings</button>
+      </div>
+
+      <!-- Map Editor Tab -->
+      <div id="tab-map-editor" class="dev-tab-content active">
+        <div class="tool-section">
+          <h3>Tools</h3>
+          <div id="map-tools">
+            <button class="map-tool active" data-tool="brush" title="Brush (B)">🖌 Brush</button>
+            <button class="map-tool" data-tool="eraser" title="Eraser (E)">🧹 Eraser</button>
+            <button class="map-tool" data-tool="fill" title="Fill (F)">🪣 Fill</button>
+            <button class="map-tool" data-tool="eyedropper" title="Eyedropper (I)">💧 Picker</button>
+            <button class="map-tool" data-tool="rectangle" title="Rectangle (R)">▭ Rect</button>
+          </div>
+        </div>
+        <div class="tool-section">
+          <h3>Brush Size</h3>
+          <input type="range" id="brush-size" min="1" max="5" value="1">
+          <span id="brush-size-label">1</span>
+        </div>
+        <div class="tool-section">
+          <h3>Terrain Tiles</h3>
+          <div id="tile-palette"></div>
+        </div>
+        <div class="tool-section">
+          <h3>Layers</h3>
+          <div id="layer-controls">
+            <button class="layer-btn active" data-layer="ground">Ground</button>
+            <button class="layer-btn" data-layer="objects">Objects</button>
+            <button class="layer-btn" data-layer="collision">Collision</button>
+          </div>
+        </div>
+        <div class="tool-section">
+          <h3>Map Actions</h3>
+          <div class="action-buttons">
+            <button id="map-new">📄 New Map</button>
+            <button id="map-resize">📐 Resize</button>
+            <button id="map-clear">🗑 Clear Layer</button>
+            <button id="map-save">💾 Save</button>
+            <button id="map-load">📂 Load</button>
+            <button id="map-export">📤 Export JSON</button>
+            <button id="map-undo">↩ Undo</button>
+            <button id="map-redo">↪ Redo</button>
+          </div>
+        </div>
+        <div class="tool-section">
+          <h3>Grid</h3>
+          <label><input type="checkbox" id="show-grid" checked> Show Grid</label>
+          <label><input type="checkbox" id="show-collision"> Show Collision</label>
+        </div>
+      </div>
+
+      <!-- Sprite Designer Tab -->
+      <div id="tab-sprite-designer" class="dev-tab-content">
+        <div class="tool-section">
+          <h3>Sprite Canvas</h3>
+          <div id="sprite-editor-area">
+            <canvas id="sprite-canvas" width="256" height="256"></canvas>
+            <canvas id="sprite-preview" width="64" height="64"></canvas>
+          </div>
+        </div>
+        <div class="tool-section">
+          <h3>Drawing Tools</h3>
+          <div id="sprite-tools">
+            <button class="sprite-tool active" data-tool="pencil">✏ Pencil</button>
+            <button class="sprite-tool" data-tool="eraser">🧹 Eraser</button>
+            <button class="sprite-tool" data-tool="fill">🪣 Fill</button>
+            <button class="sprite-tool" data-tool="line">📏 Line</button>
+            <button class="sprite-tool" data-tool="mirror">🪞 Mirror</button>
+          </div>
+        </div>
+        <div class="tool-section">
+          <h3>Color Palette</h3>
+          <input type="color" id="sprite-color" value="#ff0000">
+          <div id="color-palette"></div>
+        </div>
+        <div class="tool-section">
+          <h3>Sprite Size</h3>
+          <select id="sprite-size">
+            <option value="16">16×16</option>
+            <option value="32" selected>32×32</option>
+            <option value="64">64×64</option>
+          </select>
+        </div>
+        <div class="tool-section">
+          <h3>Animation Frames</h3>
+          <div id="frame-list"></div>
+          <div class="action-buttons">
+            <button id="frame-add">+ Add Frame</button>
+            <button id="frame-delete">− Delete Frame</button>
+            <button id="frame-play">▶ Play</button>
+          </div>
+        </div>
+        <div class="tool-section">
+          <h3>Presets</h3>
+          <div id="sprite-presets"></div>
+        </div>
+        <div class="tool-section">
+          <h3>Actions</h3>
+          <div class="action-buttons">
+            <button id="sprite-save">💾 Save Sprite</button>
+            <button id="sprite-load">📂 Load Sprite</button>
+            <button id="sprite-export">📤 Export PNG</button>
+            <button id="sprite-apply">✅ Apply to Player</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- World Settings Tab -->
+      <div id="tab-world-settings" class="dev-tab-content">
+        <div class="tool-section">
+          <h3>Time of Day</h3>
+          <input type="range" id="time-of-day" min="0" max="24" step="0.5" value="12">
+          <span id="time-label">12:00</span>
+        </div>
+        <div class="tool-section">
+          <h3>Weather</h3>
+          <select id="weather-select">
+            <option value="clear">☀ Clear</option>
+            <option value="rain">🌧 Rain</option>
+            <option value="snow">❄ Snow</option>
+            <option value="fog">🌫 Fog</option>
+          </select>
+        </div>
+        <div class="tool-section">
+          <h3>Player Speed</h3>
+          <input type="range" id="player-speed" min="1" max="10" value="3">
+          <span id="speed-label">3</span>
+        </div>
+        <div class="tool-section">
+          <h3>Camera Zoom</h3>
+          <input type="range" id="camera-zoom" min="0.5" max="4" step="0.25" value="2">
+          <span id="zoom-label">2x</span>
+        </div>
+        <div class="tool-section">
+          <h3>Teleport</h3>
+          <input type="number" id="tp-x" placeholder="X" min="0" style="width:60px">
+          <input type="number" id="tp-y" placeholder="Y" min="0" style="width:60px">
+          <button id="tp-go">Go</button>
+        </div>
+        <div class="tool-section">
+          <h3>Debug</h3>
+          <label><input type="checkbox" id="show-fps"> Show FPS</label>
+          <label><input type="checkbox" id="show-hitboxes"> Show Hitboxes</label>
+          <label><input type="checkbox" id="noclip"> No Clip</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification toast -->
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <!-- Hidden file inputs -->
+  <input type="file" id="map-file-input" accept=".json" style="display:none">
+  <input type="file" id="sprite-file-input" accept=".json,.png" style="display:none">
+
+  <script src="js/tiles.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/weather.js"></script>
+  <script src="js/mapEditor.js"></script>
+  <script src="js/spriteDesigner.js"></script>
+  <script src="js/devtools.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
