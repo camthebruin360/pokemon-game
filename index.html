@@ -1416,10 +1416,12 @@ function _importTrack(file) {
   reader.onload = e => {
     try {
       const pts = JSON.parse(e.target.result);
-      if (!Array.isArray(pts) || pts.length !== 12) return alert('Need exactly 12 control points!');
+      // Supports both {x,y,z} object format and [x,y,z] array format
+      if (!Array.isArray(pts) || pts.length !== CTRL_PTS.length)
+        return alert(`Track file must contain exactly ${CTRL_PTS.length} control points.`);
       pts.forEach((p, i) => CTRL_PTS[i].set(p.x ?? p[0], p.y ?? p[1], p.z ?? p[2]));
       rebuildTrack(); _refreshCPInputs();
-    } catch (err) { alert('Parse error: ' + err.message); }
+    } catch (_err) { alert('Failed to import track: invalid JSON format.'); }
   };
   reader.readAsText(file);
 }
@@ -1438,8 +1440,8 @@ function _teleport() {
   const tang = trackCurve.getTangentAt(0.01);
   player.angle = Math.atan2(tang.x, tang.z);
 }
-let _gii = 0;
-function _giveItem() { player.heldItem = ITEM_TYPES[_gii++ % ITEM_TYPES.length]; }
+let _giveItemIdx = 0;
+function _giveItem() { player.heldItem = ITEM_TYPES[_giveItemIdx++ % ITEM_TYPES.length]; }
 
 // ---- Bind a range slider and keep its value-display in sync ----------------
 function _bindSlider(id, cb, unit = '') {
@@ -1569,7 +1571,7 @@ function _createDevPanel() {
     `<div id="dev-content-map"   class="dev-content active">${mapHTML}</div>` +
     `<div id="dev-content-car"   class="dev-content">${carHTML}</div>` +
     `<div id="dev-content-settings" class="dev-content">${settingsHTML}</div>` +
-    `<div id="dev-hint">Press \` to toggle dev mode</div>`;
+    `<div id="dev-hint">Press \` (backtick / tilde) to toggle dev mode</div>`;
   document.body.appendChild(panel);
 
   // DEV badge (bottom-left)
