@@ -92,7 +92,7 @@ class GameMap {
 
   setTile(layer, x, y, tileId) {
     if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-      this.layers[layer][x] = this.layers[layer][x] || [];
+      this.layers[layer][y] = this.layers[layer][y] || [];
       this.layers[layer][y][x] = tileId;
     }
   }

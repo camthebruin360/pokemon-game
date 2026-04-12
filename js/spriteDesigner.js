@@ -110,8 +110,8 @@ class SpriteDesigner {
     if (this.canvas) {
       this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
       this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
-      this.canvas.addEventListener('mouseup', () => this.onMouseUp());
-      this.canvas.addEventListener('mouseleave', () => this.onMouseUp());
+      this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
+      this.canvas.addEventListener('mouseleave', (e) => this.onMouseUp(e));
     }
 
     // Tool buttons
@@ -213,9 +213,12 @@ class SpriteDesigner {
     }
   }
 
-  onMouseUp() {
-    if (this.currentTool === 'line' && this.lineStart) {
-      // Draw line was already handled in mousedown start; for simplicity draw immediate
+  onMouseUp(e) {
+    if (this.currentTool === 'line' && this.lineStart && this.canvas) {
+      const pos = this.getPixelCoords(e || { clientX: 0, clientY: 0 });
+      this.drawLine(this.lineStart.x, this.lineStart.y, pos.x, pos.y, this.currentColor);
+      this.renderSpriteCanvas();
+      this.updatePreview();
       this.lineStart = null;
     }
     this.isDrawing = false;
